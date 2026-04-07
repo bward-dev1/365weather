@@ -1,8 +1,9 @@
 const weatherBtn = document.getElementById('show-weather-btn');
+const locationBtn = document.getElementById('my-location-btn');
 const resultDiv = document.getElementById('weather-result');
 const cityInput = document.getElementById('city-input');
 
-// Maps Open-Meteo WMO codes to your specific SVG filenames
+// 1. Maps Open-Meteo WMO codes to your specific SVG filenames
 function getWeatherDetails(code) {
   const mapping = {
     0: { text: "Clear Sky", icon: "clear-day.svg" },
@@ -33,7 +34,33 @@ function getWeatherDetails(code) {
   return mapping[code] || { text: "Cloudy", icon: "cloudy.svg" };
 }
 
-function getWeather() {
+// 2. Reusable function to fetch and display weather based on lat/lon
+function fetchWeatherByCoords(lat, lon, name, country = "") {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weather_code`;
+
+  return fetch(url)
+    .then(response => response.json())
+    .then(weatherData => {
+      const temp = weatherData.current.temperature_2m;
+      const feelsLike = weatherData.current.apparent_temperature;
+      const details = getWeatherDetails(weatherData.current.weather_code);
+
+      resultDiv.innerHTML = `
+        <h3>Weather in ${name}${country ? ', ' + country : ''}</h3>
+        <img src="${details.icon}" alt="${details.text}" class="weather-icon">
+        <p><strong>${details.text}</strong></p>
+        <p>Temperature: <strong>${temp}°C</strong></p>
+        <p>Feels like: <strong>${feelsLike}°C</strong></p>
+      `;
+    })
+    .catch(error => {
+      resultDiv.innerText = "Error loading weather data.";
+      console.error("Error:", error);
+    });
+}
+
+// 3. Logic for the "Search" button (Geocoding)
+function getWeatherBySearch() {
   const city = cityInput.value.trim();
 
   if (!city) {
@@ -52,33 +79,44 @@ function getWeather() {
       }
 
       const { latitude, longitude, name, country } = geoData.results[0];
-
-      // Step 2: Fetch weather using coordinates including weather_code
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,weather_code`;
-
-      return fetch(url)
-        .then(response => response.json())
-        .then(weatherData => {
-          const temp = weatherData.current.temperature_2m;
-          const feelsLike = weatherData.current.apparent_temperature;
-          const details = getWeatherDetails(weatherData.current.weather_code);
-
-          resultDiv.innerHTML = `
-            <h3>Weather in ${name}, ${country}</h3>
-            <img src="${details.icon}" alt="${details.text}" class="weather-icon">
-            <p><strong>${details.text}</strong></p>
-            <p>Temperature: <strong>${temp}°C</strong></p>
-            <p>Feels like: <strong>${feelsLike}°C</strong></p>
-          `;
-        });
+      fetchWeatherByCoords(latitude, longitude, name, country);
     })
     .catch(error => {
-      resultDiv.innerText = "Error loading weather.";
+      resultDiv.innerText = "Error finding city.";
       console.error("Error:", error);
     });
 }
 
-weatherBtn.addEventListener('click', getWeather);
+// 4. Logic for the "My Location" button (GPS)
+function getWeatherByGPS() {
+  if (!navigator.geolocation) {
+    resultDiv.innerHTML = "<p>Geolocation is not supported by your browser.</p>";
+    return;
+  }
+
+  resultDiv.innerText = "Locating...";
+
+  // This triggers the browser's "Allow GPS" permission popup
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      // We label this "Current Location" as the API doesn't return a name for GPS coords
+      fetchWeatherByCoords(lat, lon, "Your Current Location");
+    },
+    (error) => {
+      let msg = "Unable to retrieve your location.";
+      if (error.code === 1) msg = "Permission denied. Please allow location access.";
+      resultDiv.innerHTML = `<p>${msg}</p>`;
+    }
+  );
+}
+
+// 5. Event Listeners
+weatherBtn.addEventListener('click', getWeatherBySearch);
+
+locationBtn.addEventListener('click', getWeatherByGPS);
+
 cityInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') getWeather();
+  if (e.key === 'Enter') getWeatherBySearch();
 });
